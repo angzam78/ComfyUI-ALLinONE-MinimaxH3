@@ -752,6 +752,75 @@ let _dim=null;
 const showDimmer=()=>{ if(!_dim){_dim=mk("div",{position:"fixed",inset:"0",background:"rgba(0,0,0,.7)",zIndex:"999990",display:"none",pointerEvents:"none"});document.body.appendChild(_dim);} _dim.style.display="block"; };
 const hideDimmer=()=>{ if(_dim)_dim.style.display="none"; };
 
+function inputImageUrl(name){
+  const parts=String(name||"").replace(/\\/g,"/").split("/");
+  const filename=parts.pop()||"";
+  const subfolder=parts.join("/");
+  return api.apiURL(`/view?filename=${encodeURIComponent(filename)}&type=input&subfolder=${encodeURIComponent(subfolder)}&t=${Date.now()}`);
+}
+
+function openInputImagePicker(onSelect,onUpload){
+  const overlay=mk("div",{position:"fixed",inset:"0",zIndex:"1000001",background:"rgba(0,0,0,.86)",display:"flex",alignItems:"center",justifyContent:"center",padding:"20px",boxSizing:"border-box"});
+  const panel=mk("div",{width:"min(760px,96vw)",height:"min(680px,90vh)",display:"flex",flexDirection:"column",background:C.bg1,border:`1px solid ${C.borderH}`,borderRadius:"12px",boxShadow:"0 24px 80px rgba(0,0,0,.95)",overflow:"hidden"});
+  const head=mk("div",{display:"flex",alignItems:"center",gap:"10px",padding:"14px 16px",borderBottom:`1px solid ${C.border}`,flexShrink:"0"});
+  const title=mk("div",{fontSize:"13px",fontWeight:"800",letterSpacing:".04em",color:C.text,flex:"1"});tx(title,"Choose from ComfyUI input");
+  const closeBtn=mk("button",{height:"28px",padding:"0 12px",borderRadius:"6px",border:`1px solid ${C.border}`,background:C.bg2,color:C.text,fontSize:"10px",fontWeight:"700",cursor:"pointer",outline:"none"},{type:"button"});tx(closeBtn,"Close");
+  head.append(title,closeBtn);
+  const tools=mk("div",{display:"flex",alignItems:"center",gap:"8px",padding:"10px 16px",borderBottom:`1px solid ${C.border}`,flexShrink:"0"});
+  const search=mk("input",{flex:"1",height:"30px",boxSizing:"border-box",background:C.bg2,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"0 10px",color:C.text,fontSize:"11px",outline:"none"},{type:"search",placeholder:"Search input images...","aria-label":"Search input images"});
+  const refreshBtn=mk("button",{height:"30px",padding:"0 11px",borderRadius:"6px",border:`1px solid ${C.border}`,background:C.bg2,color:C.muted,fontSize:"10px",fontWeight:"700",cursor:"pointer",outline:"none"},{type:"button"});tx(refreshBtn,"Refresh");
+  const uploadBtn=mk("button",{height:"30px",padding:"0 11px",borderRadius:"6px",border:`1px solid ${C.lime}`,background:"transparent",color:C.lime,fontSize:"10px",fontWeight:"700",cursor:"pointer",outline:"none"},{type:"button"});tx(uploadBtn,"Upload from computer");
+  if(onUpload) tools.append(search,refreshBtn,uploadBtn); else tools.append(search,refreshBtn);
+  const status=mk("div",{padding:"9px 16px 5px",fontSize:"9px",color:C.muted,flexShrink:"0"});tx(status,"Loading images...");
+  const grid=mk("div",{flex:"1",minHeight:"0",overflowY:"auto",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(132px,1fr))",alignContent:"start",gap:"10px",padding:"10px 16px 16px",scrollbarWidth:"thin",scrollbarColor:`${C.border} transparent`});
+  panel.append(head,tools,status,grid);overlay.appendChild(panel);
+  let files=[];
+  let closed=false;
+  const close=()=>{if(closed)return;closed=true;overlay.remove();document.removeEventListener("keydown",onKey);};
+  const onKey=e=>{if(e.key==="Escape")close();};
+  const render=()=>{
+    const query=String(search.value||"").trim().toLowerCase();
+    const visible=files.filter(name=>!query||String(name).toLowerCase().includes(query));
+    grid.innerHTML="";
+    tx(status,visible.length===files.length?`${files.length} image${files.length===1?"":"s"} in input folder`:`${visible.length} of ${files.length} images`);
+    if(!visible.length){
+      const empty=mk("div",{gridColumn:"1/-1",padding:"36px 12px",textAlign:"center",fontSize:"11px",lineHeight:"1.6",color:C.muted});
+      tx(empty,files.length?"No images match your search.":"No PNG, JPG, WEBP, or BMP files found in the input folder.");grid.appendChild(empty);return;
+    }
+    visible.forEach(name=>{
+      const card=mk("button",{display:"flex",flexDirection:"column",gap:"7px",minWidth:"0",padding:"7px",border:`1px solid ${C.border}`,borderRadius:"8px",background:C.bg2,color:C.text,cursor:"pointer",textAlign:"left",outline:"none",transition:"border-color .16s, background .16s"},{type:"button",title:`Use ${name}`});
+      const image=mk("img",{width:"100%",height:"104px",objectFit:"contain",background:"#0a0a0a",borderRadius:"5px",display:"block"},{alt:name,loading:"lazy"});
+      image.src=inputImageUrl(name);
+      const label=mk("div",{fontSize:"9px",lineHeight:"1.3",color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"});tx(label,name);
+      card.append(image,label);
+      card.onmouseenter=()=>{card.style.borderColor=C.lime;card.style.background=C.bg3;};
+      card.onmouseleave=()=>{card.style.borderColor=C.border;card.style.background=C.bg2;};
+      card.onclick=()=>{onSelect(name);close();};
+      grid.appendChild(card);
+    });
+  };
+  const load=async()=>{
+    refreshBtn.disabled=true;refreshBtn.style.opacity=".55";tx(status,"Loading images...");
+    try{
+      const response=await api.fetchApi("/h3one/input_files?type=image",{cache:"no-store"});
+      if(!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data=await response.json();
+      files=Array.isArray(data.files)?data.files.filter(Boolean):[];
+      render();
+    }catch(error){
+      files=[];grid.innerHTML="";tx(status,`Could not read input folder: ${fmtErr(error)}`);status.style.color=C.err;
+    }finally{refreshBtn.disabled=false;refreshBtn.style.opacity="1";}
+  };
+  search.oninput=render;
+  refreshBtn.onclick=load;
+  uploadBtn.onclick=()=>{if(onUpload){close();onUpload();}};
+  closeBtn.onclick=close;
+  overlay.onclick=e=>{if(e.target===overlay)close();};
+  document.addEventListener("keydown",onKey);
+  document.body.appendChild(overlay);
+  load();
+}
+
 // Fullscreen video lightbox for any media url (inputs, outputs, previews).
 function h3OpenVideoLightbox(url,opts){
   const o=opts||{};
@@ -1205,7 +1274,7 @@ function mkRmBtn(){
   return b;
 }
 
-function ImgSlot(optional,onFile,onDimensions,fixed){
+function ImgSlot(optional,onFile,onDimensions,fixed,openPicker){
   let _pendingSize=null;
   const wrap=mk("div",{
     width:"72px",height:"72px",borderRadius:"12px",
@@ -1243,7 +1312,10 @@ function ImgSlot(optional,onFile,onDimensions,fixed){
   wrap.append(icoWrap,prevEl,rm,inp);
   wrap.onmouseenter=()=>{wrap.style.borderColor=C.lime;};
   wrap.onmouseleave=()=>{wrap.style.borderColor=C.border;};
-  wrap.onclick=()=>{inp.value="";inp.click();};
+  wrap.onclick=()=>{
+    if(openPicker){openPicker(name=>{if(name){_restorePreview(name);onFile(name);}},()=>{inp.value="";inp.click();});return;}
+    inp.value="";inp.click();
+  };
   let _dragDepth=0;
   wrap.addEventListener("dragenter",e=>{e.preventDefault();e.stopPropagation();_dragDepth++;wrap.style.borderColor=C.lime;wrap.style.background=C.bg1;});
   wrap.addEventListener("dragover",e=>{e.preventDefault();e.stopPropagation();});
@@ -1309,7 +1381,7 @@ function ImgSlot(optional,onFile,onDimensions,fixed){
     if(!name) return;
     _loadToken++;
     if(_objUrl){URL.revokeObjectURL(_objUrl);_objUrl=null;}
-    const src=api.apiURL(`/view?filename=${encodeURIComponent(name)}&type=input&subfolder=&t=${Date.now()}`);
+    const src=inputImageUrl(name);
     _currentName=name;
     _showLoaded(src,name);
     if(onDimensions){
@@ -4523,7 +4595,7 @@ function persist(){
         refArea.appendChild(imgCap);
         const imgRow=mk("div",{display:"flex",gap:"8px",flexWrap:"wrap"});
         S.refImages.forEach((name,idx)=>{
-          const slot=ImgSlot(false,n=>{const current=S.refImages.indexOf(name);if(current<0)return;if(n===null)S.refImages.splice(current,1);else S.refImages[current]=n;persist();_renderRefs();},(nm,size)=>{if(nm&&size){S.refImageSizes[nm]=size;persist();}});
+          const slot=ImgSlot(false,n=>{const current=S.refImages.indexOf(name);if(current<0)return;if(n===null)S.refImages.splice(current,1);else S.refImages[current]=n;persist();_renderRefs();},(nm,size)=>{if(nm&&size){S.refImageSizes[nm]=size;persist();}},false,(select,upload)=>openInputImagePicker(select,upload));
           const card=mk("div",{display:"flex",flexDirection:"column",gap:"3px",alignItems:"center"});
           card.appendChild(slot.el);
           if(S.mode==="charsheet"){
@@ -4546,7 +4618,7 @@ function persist(){
         const imgHint=mk("div",{fontSize:"8px",color:C.muted,lineHeight:"1.5",marginTop:"2px"});
         tx(imgHint,S.mode==="charsheet"?"These references define one character: the first image sets the style, the others contribute identity details (face, hair, outfit, props). Describe in your prompt what to keep and what to ignore.":"The video starts from the first image. The other images guide the subject's identity and style, they do not appear as scenes in the video.");
         refArea.appendChild(imgHint);
-        addImg.onclick=async()=>{
+        const uploadLocalImage=()=>{
           if(_refImageUploadsPending||S.refImages.length>=9) return;
           upImg.value="";
           upImg.onchange=async()=>{
@@ -4572,6 +4644,12 @@ function persist(){
             if(S.mode==="mask") _renderMask({refreshPreview:false}); else _renderRefs();
           };
           upImg.click();
+        };
+        addImg.onclick=()=>{
+          if(_refImageUploadsPending||S.refImages.length>=9) return;
+          openInputImagePicker(name=>{
+            if(S.refImages.length<9){S.refImages.push(name);persist();_renderRefs();}
+          },uploadLocalImage);
         };
         // simple remove: click slot preview removes? keep manual via re-render not needed; images removable via "clear" button row
         if(S.mode==="charsheet") return;

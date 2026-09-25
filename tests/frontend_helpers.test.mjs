@@ -39,6 +39,13 @@ test("bundle is non-trivial and registers an extension", () => {
   );
 });
 
+test("R2V references expose the server-side input image picker", () => {
+  const bundle = readFileSync(bundlePath, "utf8");
+  assert.ok(bundle.includes("Choose from ComfyUI input"), "input picker modal is missing");
+  assert.ok(bundle.includes("/h3one/input_files?type=image"), "input image listing route is missing");
+  assert.ok(bundle.includes("Upload from computer"), "local upload fallback is missing");
+});
+
 test("helpers file is non-trivial and exports the core helpers", () => {
   const src = readFileSync(helpersPath, "utf8");
   assert.ok(src.includes("export function aspect"), "helpers must export aspect");

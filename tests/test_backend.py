@@ -326,6 +326,18 @@ class TestScan(_NodesTestBase):
         response = _run(self.nodes.list_input_files(_FakeRequest({}, query={"type": "video"})))
         self.assertEqual(response.kwargs["data"]["files"], ["clip.m4v"])
 
+    def test_image_input_route_recurses_into_subfolders(self):
+        input_dir = self.tmp / "input"
+        (input_dir / "references").mkdir(parents=True)
+        (input_dir / "top.webp").write_bytes(b"")
+        (input_dir / "references" / "portrait.PNG").write_bytes(b"")
+        (input_dir / "references" / "notes.txt").write_text("ignore")
+        response = _run(self.nodes.list_input_files(_FakeRequest({}, query={"type": "image"})))
+        self.assertEqual(
+            response.kwargs["data"]["files"],
+            ["references/portrait.PNG", "top.webp"],
+        )
+
     def test_image_dims_reads_png_header(self):
         import struct
 
