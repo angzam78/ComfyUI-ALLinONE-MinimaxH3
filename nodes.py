@@ -766,11 +766,13 @@ async def list_input_files(request):
             exts = (".mp4", ".m4v", ".webm", ".mkv", ".avi", ".mov")
         input_dir = folder_paths.get_input_directory()
         found = []
-        for root, _dirs, filenames in os.walk(input_dir):
+        for root, dirs, filenames in os.walk(input_dir):
+            dirs[:] = [directory for directory in dirs if not directory.startswith(".")]
             for filename in filenames:
-                if filename.lower().endswith(exts):
-                    relative = os.path.relpath(os.path.join(root, filename), input_dir)
-                    found.append(relative.replace(os.sep, "/"))
+                if filename.startswith(".") or not filename.lower().endswith(exts):
+                    continue
+                relative = os.path.relpath(os.path.join(root, filename), input_dir)
+                found.append(relative.replace(os.sep, "/"))
         found.sort(key=str.casefold)
         return web.json_response({"files": found})
     except Exception as e:
