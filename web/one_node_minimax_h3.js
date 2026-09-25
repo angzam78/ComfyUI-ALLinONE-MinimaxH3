@@ -429,9 +429,12 @@ function isImageItem(item){
 }
 
 function inputFileExists(files,name){
-  const base=String(name||"").replace(/\\/g,"/").split("/").pop();
+  const normalized=String(name||"").replace(/\\/g,"/");
+  const base=normalized.split("/").pop();
   if(!base) return false;
-  return (Array.isArray(files)?files:[]).some(f=>String(f).replace(/\\/g,"/").split("/").pop()===base);
+  const entries=Array.isArray(files)?files:[];
+  if(normalized.includes("/")&&entries.some(f=>String(f).replace(/\\/g,"/")===normalized)) return true;
+  return entries.some(f=>String(f).replace(/\\/g,"/").split("/").pop()===base);
 }
 
 // -- Video Compare + Stitch helpers (mirrored in h3_helpers.mjs) -------------
@@ -766,26 +769,46 @@ function openInputImagePicker(onSelect,onUpload){
   const title=mk("div",{fontSize:"13px",fontWeight:"800",letterSpacing:".04em",color:C.text,flex:"1"});tx(title,"Choose from ComfyUI input");
   const closeBtn=mk("button",{height:"28px",padding:"0 12px",borderRadius:"6px",border:`1px solid ${C.border}`,background:C.bg2,color:C.text,fontSize:"10px",fontWeight:"700",cursor:"pointer",outline:"none"},{type:"button"});tx(closeBtn,"Close");
   head.append(title,closeBtn);
-  const tools=mk("div",{display:"flex",alignItems:"center",gap:"8px",padding:"10px 16px",borderBottom:`1px solid ${C.border}`,flexShrink:"0"});
-  const search=mk("input",{flex:"1",height:"30px",boxSizing:"border-box",background:C.bg2,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"0 10px",color:C.text,fontSize:"11px",outline:"none"},{type:"search",placeholder:"Search input images...","aria-label":"Search input images"});
+  const tools=mk("div",{display:"flex",alignItems:"center",gap:"8px",padding:"10px 16px",borderBottom:`1px solid ${C.border}`,flexShrink:"0",flexWrap:"wrap"});
+  const folderSelect=mk("select",{height:"30px",maxWidth:"220px",minWidth:"150px",boxSizing:"border-box",background:C.bg2,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"0 8px",color:C.text,fontSize:"10px",outline:"none"},{"aria-label":"Input folder"});
+  const search=mk("input",{flex:"1",minWidth:"150px",height:"30px",boxSizing:"border-box",background:C.bg2,border:`1px solid ${C.border}`,borderRadius:"6px",padding:"0 10px",color:C.text,fontSize:"11px",outline:"none"},{type:"search",placeholder:"Search input images...","aria-label":"Search input images"});
   const refreshBtn=mk("button",{height:"30px",padding:"0 11px",borderRadius:"6px",border:`1px solid ${C.border}`,background:C.bg2,color:C.muted,fontSize:"10px",fontWeight:"700",cursor:"pointer",outline:"none"},{type:"button"});tx(refreshBtn,"Refresh");
   const uploadBtn=mk("button",{height:"30px",padding:"0 11px",borderRadius:"6px",border:`1px solid ${C.lime}`,background:"transparent",color:C.lime,fontSize:"10px",fontWeight:"700",cursor:"pointer",outline:"none"},{type:"button"});tx(uploadBtn,"Upload from computer");
-  if(onUpload) tools.append(search,refreshBtn,uploadBtn); else tools.append(search,refreshBtn);
+  if(onUpload) tools.append(folderSelect,search,refreshBtn,uploadBtn); else tools.append(folderSelect,search,refreshBtn);
   const status=mk("div",{padding:"9px 16px 5px",fontSize:"9px",color:C.muted,flexShrink:"0"});tx(status,"Loading images...");
   const grid=mk("div",{flex:"1",minHeight:"0",overflowY:"auto",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(132px,1fr))",alignContent:"start",gap:"10px",padding:"10px 16px 16px",scrollbarWidth:"thin",scrollbarColor:`${C.border} transparent`});
   panel.append(head,tools,status,grid);overlay.appendChild(panel);
   let files=[];
+  let selectedFolder="";
   let closed=false;
   const close=()=>{if(closed)return;closed=true;overlay.remove();document.removeEventListener("keydown",onKey);};
   const onKey=e=>{if(e.key==="Escape")close();};
+  const folderOf=name=>{
+    const normalized=String(name||"").replace(/\\/g,"/");
+    const slash=normalized.lastIndexOf("/");
+    return slash>0?normalized.slice(0,slash):"";
+  };
+  const renderFolders=()=>{
+    const folders=[...new Set(files.map(folderOf).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{sensitivity:"base"}));
+    const previous=selectedFolder;
+    folderSelect.innerHTML="";
+    const all=mk("option",{}, {value:""});tx(all,"All input folders");folderSelect.appendChild(all);
+    folders.forEach(folder=>{const option=mk("option",{}, {value:folder});tx(option,folder);folderSelect.appendChild(option);});
+    selectedFolder=folders.includes(previous)?previous:"";
+    folderSelect.value=selectedFolder;
+  };
   const render=()=>{
     const query=String(search.value||"").trim().toLowerCase();
-    const visible=files.filter(name=>!query||String(name).toLowerCase().includes(query));
+    const inFolder=name=>!selectedFolder||folderOf(name)===selectedFolder;
+    const scoped=files.filter(inFolder);
+    const visible=scoped.filter(name=>!query||String(name).toLowerCase().includes(query));
     grid.innerHTML="";
-    tx(status,visible.length===files.length?`${files.length} image${files.length===1?"":"s"} in input folder`:`${visible.length} of ${files.length} images`);
+    const location=selectedFolder?` in ${selectedFolder}`:" in input folders";
+    tx(status,visible.length===scoped.length?`${scoped.length} image${scoped.length===1?"":"s"}${location}`:`${visible.length} of ${scoped.length} images${location}`);
     if(!visible.length){
       const empty=mk("div",{gridColumn:"1/-1",padding:"36px 12px",textAlign:"center",fontSize:"11px",lineHeight:"1.6",color:C.muted});
-      tx(empty,files.length?"No images match your search.":"No PNG, JPG, WEBP, or BMP files found in the input folder.");grid.appendChild(empty);return;
+      const emptyText=scoped.length?"No images match your search.":(selectedFolder?"No images found in this input folder.":"No PNG, JPG, WEBP, or BMP files found in the input folder.");
+      tx(empty,emptyText);grid.appendChild(empty);return;
     }
     visible.forEach(name=>{
       const card=mk("button",{display:"flex",flexDirection:"column",gap:"7px",minWidth:"0",padding:"7px",border:`1px solid ${C.border}`,borderRadius:"8px",background:C.bg2,color:C.text,cursor:"pointer",textAlign:"left",outline:"none",transition:"border-color .16s, background .16s"},{type:"button",title:`Use ${name}`});
@@ -806,12 +829,14 @@ function openInputImagePicker(onSelect,onUpload){
       if(!response.ok) throw new Error(`HTTP ${response.status}`);
       const data=await response.json();
       files=Array.isArray(data.files)?data.files.filter(Boolean):[];
+      renderFolders();
       render();
     }catch(error){
       files=[];grid.innerHTML="";tx(status,`Could not read input folder: ${fmtErr(error)}`);status.style.color=C.err;
     }finally{refreshBtn.disabled=false;refreshBtn.style.opacity="1";}
   };
   search.oninput=render;
+  folderSelect.onchange=()=>{selectedFolder=folderSelect.value;render();};
   refreshBtn.onclick=load;
   uploadBtn.onclick=()=>{if(onUpload){close();onUpload();}};
   closeBtn.onclick=close;
@@ -6277,7 +6302,7 @@ function persist(){
       let _upResult=null;
       let _upscaleRun="";
       const _isImageItem=item=>!!(item&&(item.kind==="image"||/\.(png|jpe?g|webp|bmp)$/i.test(item.filename||"")));
-      const _inputImageUrl=name=>api.apiURL(`/view?filename=${encodeURIComponent(name)}&type=input&subfolder=`);
+      const _inputImageUrl=name=>inputImageUrl(name);
       const _outputImageThumb=item=>api.apiURL(`/h3one/thumb?${thumbQuery(item,1600)}`);
       const _outputImageUrl=item=>api.apiURL(`/view?${viewQuery(item)}`);
       const _syncCompareSourceSelect=()=>{

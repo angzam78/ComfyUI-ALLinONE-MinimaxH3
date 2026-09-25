@@ -43,6 +43,7 @@ test("R2V references expose the server-side input image picker", () => {
   const bundle = readFileSync(bundlePath, "utf8");
   assert.ok(bundle.includes("Choose from ComfyUI input"), "input picker modal is missing");
   assert.ok(bundle.includes("/h3one/input_files?type=image"), "input image listing route is missing");
+  assert.ok(bundle.includes("All input folders"), "input folder selector is missing");
   assert.ok(bundle.includes("Upload from computer"), "local upload fallback is missing");
 });
 
@@ -405,6 +406,11 @@ test("isImageItem: detects images by kind and extension", () => {
 test("inputFileExists: matches a file in the listing", () => {
   assert.equal(inputFileExists(["a.mp3", "b.mp3"], "b.mp3"), true);
   assert.equal(inputFileExists(["a.mp3", "b.mp3"], "c.mp3"), false);
+});
+
+test("inputFileExists: prefers exact nested paths and normalizes separators", () => {
+  assert.equal(inputFileExists(["sub/a.mp3", "other/a.mp3"], "sub/a.mp3"), true);
+  assert.equal(inputFileExists(["sub/a.mp3"], "sub\\a.mp3"), true);
 });
 
 test("inputFileExists: compares basenames, ignoring subfolder prefixes", () => {

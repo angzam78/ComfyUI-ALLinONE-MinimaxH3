@@ -239,11 +239,14 @@ export function isImageItem(item) {
 }
 
 // Whether a media file is present in a listing returned by /h3one/input_files.
-// Compares basenames so a subfolder prefix on either side does not matter.
+// Prefer exact relative paths, then fall back to basename compatibility.
 export function inputFileExists(files, name) {
-  const base = String(name || "").replace(/\\/g, "/").split("/").pop();
+  const normalized = String(name || "").replace(/\\/g, "/");
+  const base = normalized.split("/").pop();
   if (!base) return false;
-  return (Array.isArray(files) ? files : []).some((f) => String(f).replace(/\\/g, "/").split("/").pop() === base);
+  const entries = Array.isArray(files) ? files : [];
+  if (normalized.includes("/") && entries.some((f) => String(f).replace(/\\/g, "/") === normalized)) return true;
+  return entries.some((f) => String(f).replace(/\\/g, "/").split("/").pop() === base);
 }
 
 // Quality preset flag table. Keys mirror config.json quality_presets; each
